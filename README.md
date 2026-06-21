@@ -39,7 +39,6 @@ A complete, self-contained package of all code, data, and results for the InferT
 Qwen_Mistral/
 │
 ├── README.md                                   ← this file
-├── InferTutor_Model_Comparison_Report.pdf      ← original serving performance report (v1)
 ├── Comparison_Report.pdf                       ← final report with quality eval (v2)
 ├── generate_comparison_report.py               ← generates v1 PDF from experiment data
 │
