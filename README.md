@@ -1,10 +1,4 @@
-# Qwen3-VL-4B vs Mistral-7B — InferTutor Arena Capstone
-
-**Author:** Emmanuel Olanrewaju  
-**Date:** June 2026  
-**Final report:** `Comparison_Report.pdf`
-
----
+# Qwen3-VL-4B vs Mistral-7B
 
 ## What This Is
 
