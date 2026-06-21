@@ -1,0 +1,722 @@
+{
+  "metadata": {
+    "title": "InferTutor Quality Evaluation Set",
+    "description": "100 inference engineering questions for quality comparison between Qwen3-VL-4B and Mistral-7B",
+    "categories": [
+      "KV Cache",
+      "TTFT and ITL Diagnosis",
+      "Batching and Scheduling",
+      "GPU Memory and Quantization",
+      "vLLM Flags and Configuration",
+      "Replicas vs Tensor Parallelism",
+      "Chunked Prefill and Prefix Caching"
+    ],
+    "scoring_rubric": {
+      "3": "Correct and complete — answer is factually accurate, covers the key points, no hallucinations",
+      "2": "Partially correct — mostly right but missing key points or has minor inaccuracies",
+      "1": "Incorrect or hallucination — factually wrong, invents flags/concepts, or completely misses the point"
+    }
+  },
+  "questions": [
+    {
+      "id": 1,
+      "category": "KV Cache",
+      "difficulty": "easy",
+      "question": "What does KV cache store and why is it important for LLM inference?",
+      "reference_answer": "KV cache stores the key and value tensors from attention computations for previously processed tokens. It avoids recomputing these tensors on every new token during decode, making token generation fast. Without it, every decode step would require reprocessing the entire context from scratch."
+    },
+    {
+      "id": 2,
+      "category": "KV Cache",
+      "difficulty": "medium",
+      "question": "Why is decode memory-bandwidth bound while prefill is compute-bound?",
+      "reference_answer": "During prefill, all input tokens are processed in parallel in a large matrix multiplication — this is compute-bound because GPU CUDA cores are fully utilized. During decode, only one new token is generated per step, requiring reading the full KV cache from HBM for every active sequence — this is bandwidth-bound because the bottleneck is reading large amounts of memory, not computing."
+    },
+    {
+      "id": 3,
+      "category": "KV Cache",
+      "difficulty": "medium",
+      "question": "How does increasing max_model_len affect KV cache memory usage?",
+      "reference_answer": "KV cache size scales linearly with max_model_len. A longer maximum sequence length requires more VRAM to store key/value tensors for each token position. Doubling max_model_len roughly doubles KV cache VRAM requirements per sequence, leaving less room for concurrent sequences."
+    },
+    {
+      "id": 4,
+      "category": "KV Cache",
+      "difficulty": "hard",
+      "question": "What is PagedAttention and how does it manage KV cache memory?",
+      "reference_answer": "PagedAttention is vLLM's memory management system for KV cache. Instead of allocating contiguous memory for each sequence's full KV cache upfront, it allocates memory in fixed-size blocks (pages) on demand as tokens are generated. This eliminates memory waste from over-allocation and allows KV cache blocks to be shared between sequences that share common prefixes."
+    },
+    {
+      "id": 5,
+      "category": "KV Cache",
+      "difficulty": "medium",
+      "question": "What happens to a sequence's KV cache when it is evicted in vLLM?",
+      "reference_answer": "When a sequence is evicted due to memory pressure, its KV cache blocks are freed from GPU memory. If the sequence needs to continue later, its KV cache must be recomputed from scratch via re-prefill, which adds latency. vLLM uses an LRU-like policy to decide which sequences to evict when memory is tight."
+    },
+    {
+      "id": 6,
+      "category": "KV Cache",
+      "difficulty": "medium",
+      "question": "How does Grouped Query Attention (GQA) reduce KV cache memory compared to Multi-Head Attention?",
+      "reference_answer": "GQA reduces KV cache size by sharing key and value heads across multiple query heads. Instead of one K/V head per Q head (standard MHA), GQA groups multiple Q heads to share one K/V head. This reduces KV cache memory by a factor equal to the grouping ratio, allowing more concurrent sequences to fit in VRAM."
+    },
+    {
+      "id": 7,
+      "category": "KV Cache",
+      "difficulty": "easy",
+      "question": "What is prefix caching and how does it reduce KV cache computation time?",
+      "reference_answer": "Prefix caching stores computed KV cache entries for commonly repeated token sequences such as system prompts and reuses them across requests. When a new request starts with the same prefix, vLLM retrieves cached KV blocks instead of recomputing the prefill, reducing TTFT significantly for requests sharing common context."
+    },
+    {
+      "id": 8,
+      "category": "KV Cache",
+      "difficulty": "hard",
+      "question": "A team notices GPU KV cache utilization is consistently above 95%. What steps should they take?",
+      "reference_answer": "High KV cache utilization means the GPU is nearly out of memory for new sequences. Solutions: (1) reduce max_model_len to decrease KV cache per sequence, (2) reduce max_num_seqs to limit concurrent sequences, (3) reduce gpu_memory_utilization if OOM errors occur, (4) enable KV cache quantization to compress entries, (5) add more replicas to distribute load across more GPUs."
+    },
+    {
+      "id": 9,
+      "category": "KV Cache",
+      "difficulty": "medium",
+      "question": "Why does a deeper model (more layers) have a larger KV cache than a shallower model with the same parameter count?",
+      "reference_answer": "KV cache size scales with the number of layers because each layer maintains its own separate K and V matrices for every token in the context. A 32-layer model stores 32x the KV tensors per token compared to a 1-layer model. More layers means more KV cache even if total parameters are similar, because depth increases KV storage linearly."
+    },
+    {
+      "id": 10,
+      "category": "KV Cache",
+      "difficulty": "hard",
+      "question": "What is Multi-Query Attention (MQA) and how does it differ from Multi-Head Attention in terms of KV cache?",
+      "reference_answer": "MQA uses a single K and V head shared across all query heads. Unlike MHA where each query head has its own K and V head, MQA drastically reduces KV cache size by a factor of num_heads at the cost of potentially reduced model expressiveness. It significantly reduces memory bandwidth pressure during decode, improving ITL at high concurrency."
+    },
+    {
+      "id": 11,
+      "category": "KV Cache",
+      "difficulty": "hard",
+      "question": "How does KV cache quantization (e.g., FP8) affect memory and output quality?",
+      "reference_answer": "KV cache quantization stores K/V tensors in lower precision (e.g., FP8 instead of BF16), halving KV cache memory per token and allowing more sequences or longer contexts to fit in VRAM. The quality tradeoff is small for FP8 but increases for more aggressive quantization. vLLM supports this via the --kv-cache-dtype flag."
+    },
+    {
+      "id": 12,
+      "category": "KV Cache",
+      "difficulty": "easy",
+      "question": "If two requests share the same system prompt and prefix caching is enabled, does vLLM compute the system prompt KV cache twice?",
+      "reference_answer": "No. With prefix caching enabled, vLLM detects that both requests share the same prefix tokens, computes the KV cache once for that prefix, and reuses the cached blocks for both requests. Without prefix caching, each request would independently recompute the system prompt prefill, wasting compute."
+    },
+    {
+      "id": 13,
+      "category": "KV Cache",
+      "difficulty": "hard",
+      "question": "What determines the maximum number of tokens that can be in the KV cache simultaneously in vLLM?",
+      "reference_answer": "It is determined by available VRAM after model weights are loaded, multiplied by gpu_memory_utilization. vLLM profiles this at startup and allocates the remaining VRAM as KV cache blocks. The number of blocks times block_size gives the maximum total KV cache tokens across all concurrent sequences."
+    },
+    {
+      "id": 14,
+      "category": "KV Cache",
+      "difficulty": "medium",
+      "question": "Why is the KV cache the primary memory bottleneck in LLM serving rather than model weights?",
+      "reference_answer": "Model weights are fixed in size and loaded once at startup. KV cache grows dynamically with request concurrency and context length. At high concurrency with long contexts, KV cache can consume 3-5x more VRAM than model weights. This is why max_model_len and max_num_seqs are the primary levers for controlling memory in production."
+    },
+    {
+      "id": 15,
+      "category": "KV Cache",
+      "difficulty": "hard",
+      "question": "How does speculative decoding interact with the KV cache?",
+      "reference_answer": "In speculative decoding, a small draft model proposes multiple tokens and the target model verifies them in parallel. Both models maintain separate KV caches. If speculative tokens are accepted, their KV cache entries are appended to the target model's cache. If rejected, the draft model's entries are discarded. The overhead of two KV caches is offset by fewer target model forward passes."
+    },
+    {
+      "id": 16,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "medium",
+      "question": "A student sees TTFT p95 jump from 700ms to 4s when users increase from 50 to 200. What is the most likely cause and fix?",
+      "reference_answer": "Queue congestion. With more concurrent users, requests spend more time waiting in the scheduler queue before prefill begins. The GPU processes one batch at a time, so additional users must wait longer. Solutions: add replicas to distribute load, reduce max_tokens to shorten requests, or accept that 200 users exceeds the single-GPU sweet spot."
+    },
+    {
+      "id": 17,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "hard",
+      "question": "ITL is stable at 8ms for 50 users but spikes to 35ms at 150 users with zero errors. What does this indicate?",
+      "reference_answer": "Memory bandwidth saturation. At 150 users, too many sequences simultaneously decode, each requiring KV cache reads from HBM. When aggregate KV cache bandwidth demand exceeds the GPU's HBM bandwidth limit, each decode step stalls waiting for memory reads to complete. Solution: reduce max_num_seqs or add replicas to decrease simultaneous decode pressure."
+    },
+    {
+      "id": 18,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "easy",
+      "question": "What is the difference between TTFT and ITL and why do they have different root causes?",
+      "reference_answer": "TTFT (time to first token) is dominated by prefill time plus queue wait — it measures how long before generation starts. ITL (inter-token latency) is dominated by memory bandwidth during decode — it measures how fast tokens are generated once started. TTFT is affected by concurrency and prompt length. ITL is affected by how many sequences simultaneously decode and KV cache size per sequence."
+    },
+    {
+      "id": 19,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "medium",
+      "question": "A team enables chunked prefill and observes ITL p95 drops from 25ms to 8ms. Why does this happen?",
+      "reference_answer": "Without chunked prefill, a long prefill monopolises the GPU for its entire duration, blocking all decode steps. Other requests' decode steps must wait, causing ITL spikes. With chunked prefill, long prefills are broken into smaller chunks interleaved with decode steps, so no single prefill blocks decodes for an extended period. ITL improves because decode runs more regularly."
+    },
+    {
+      "id": 20,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "medium",
+      "question": "TTFT p50 is 200ms but TTFT p99 is 4,000ms. What does this large gap indicate?",
+      "reference_answer": "This gap indicates occasional severe outliers — requests that wait much longer than typical. Likely causes: occasional large batch prefills blocking the queue, memory pressure causing KV cache evictions and re-prefills, or uneven request distribution across replicas. The system is generally fast but has a long-tail problem. Focus on p99 reduction through chunked prefill and better load balancing."
+    },
+    {
+      "id": 21,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "hard",
+      "question": "After doubling max_num_batched_tokens from 4096 to 8192, throughput increases but ITL p95 doubles. Explain the tradeoff.",
+      "reference_answer": "Larger batch token budgets allow vLLM to process more tokens per forward pass (higher throughput) but each pass takes longer. During that longer pass, all decode steps for active sequences are delayed. ITL rises because the time between consecutive decode steps for any given sequence increases proportionally to the batch duration. The tradeoff is throughput vs per-request streaming smoothness."
+    },
+    {
+      "id": 22,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "medium",
+      "question": "A student has high TTFT but fine ITL. Which serving parameter should they tune first?",
+      "reference_answer": "If TTFT is high but ITL is fine, the bottleneck is in prefill or queue wait, not decode. Check: (1) concurrent users vs GPU capacity — may need more replicas, (2) enable chunked prefill to reduce prefill monopolization of the scheduler, (3) check queue depth metric — if high, reduce user concurrency or add capacity. Fine ITL confirms decode is working well; the issue is getting to decode."
+    },
+    {
+      "id": 23,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "medium",
+      "question": "What metric should an inference engineer monitor to detect impending ITL degradation before it affects users?",
+      "reference_answer": "Monitor vllm:gpu_cache_usage_perc (KV cache utilization) and vllm:num_requests_running (active decode sequences). When KV cache usage exceeds 80-85% and active sequences approach max_num_seqs, ITL degradation is imminent. Alert at 80% KV cache usage to allow time to scale before user impact."
+    },
+    {
+      "id": 24,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "easy",
+      "question": "Why does enabling prefix caching reduce TTFT but not ITL?",
+      "reference_answer": "Prefix caching reduces TTFT by serving cached KV blocks for shared prefixes instead of recomputing them — this shortens the prefill phase so the first token arrives sooner. ITL is not affected because ITL is a decode-phase metric. Once generation starts, prefix caching has no role — ITL depends on memory bandwidth and concurrent decode sequences, not prefill efficiency."
+    },
+    {
+      "id": 25,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "easy",
+      "question": "A request with a 2,000-token prompt has higher TTFT than one with a 50-token prompt. Is this expected? Explain.",
+      "reference_answer": "Yes, expected. TTFT includes prefill time, which scales with prompt length. A 2,000-token prompt requires roughly 40x more compute during prefill than a 50-token prompt, directly increasing TTFT. Solutions: enable prefix caching if prompts share common prefixes, or use chunked prefill to prevent long prefills from blocking other requests in the queue."
+    },
+    {
+      "id": 26,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "hard",
+      "question": "What is the relationship between gpu_memory_utilization setting and ITL at high concurrency?",
+      "reference_answer": "Lower gpu_memory_utilization means less VRAM for KV cache, fewer concurrent sequences fit, and lower ITL (less bandwidth pressure). Higher gpu_memory_utilization means more VRAM for KV cache and more sequences fit — ITL stays low until the KV cache fills, at which point evictions spike both ITL and TTFT. There is no direct ITL impact until capacity is approached."
+    },
+    {
+      "id": 27,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "medium",
+      "question": "Adding long-output requests to a workload that previously had short outputs causes ITL p95 to worsen. Why?",
+      "reference_answer": "Long-output requests occupy decode slots for extended periods, increasing the average number of simultaneously decoding sequences at any moment. More concurrent decode sequences means more KV cache bandwidth consumed per step. ITL p95 worsens because the system spends more time in high-concurrency decode states. The p50 may stay acceptable if long-output requests are rare."
+    },
+    {
+      "id": 28,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "medium",
+      "question": "Why is ITL p95 a better production metric than ITL mean?",
+      "reference_answer": "ITL mean can hide severe outliers. If 94% of decode steps take 5ms and 6% take 50ms, the mean might be 8ms — acceptable looking. But p95 would show 50ms — indicating real user-visible streaming pauses. In streaming LLM responses, a single 50ms inter-token gap is visually noticeable as a freeze. p95 captures the worst realistic user experience; mean masks it."
+    },
+    {
+      "id": 29,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "hard",
+      "question": "A team observes TTFT degrades linearly with user count but ITL stays constant. What does this tell them about their system?",
+      "reference_answer": "The system is compute-bound on prefill but has ample memory bandwidth for decode. Linear TTFT growth with users means the queue grows proportionally — requests wait longer as more users arrive. Stable ITL means active decode sequences are well within HBM bandwidth limits. This system could potentially handle more concurrent sequences (higher max_num_seqs) without ITL penalty."
+    },
+    {
+      "id": 30,
+      "category": "TTFT and ITL Diagnosis",
+      "difficulty": "medium",
+      "question": "What causes TTFT to be high even when the server is under low load with few users?",
+      "reference_answer": "At low load, TTFT is dominated by prefill compute time, not queue wait. High TTFT under low load indicates: (1) very long input prompts requiring extensive prefill computation, (2) first request after cold start — container boot and model loading overhead, (3) torch.compile first-pass warmup overhead, (4) large image inputs in multimodal requests requiring preprocessing before prefill begins."
+    },
+    {
+      "id": 31,
+      "category": "Batching and Scheduling",
+      "difficulty": "easy",
+      "question": "What is continuous batching and how does it differ from static batching?",
+      "reference_answer": "Static batching waits until a fixed number of requests arrive, processes them all together, and only accepts new requests after the batch completes. Continuous batching (used by vLLM) dynamically inserts new requests into the batch as soon as a slot frees up. This eliminates idle GPU time between batches and dramatically improves throughput and GPU utilization for variable-length workloads."
+    },
+    {
+      "id": 32,
+      "category": "Batching and Scheduling",
+      "difficulty": "easy",
+      "question": "What does max_num_seqs control in vLLM?",
+      "reference_answer": "max_num_seqs controls the maximum number of sequences (requests) vLLM processes simultaneously in its continuous batching scheduler. It limits how many requests are in the active decode pool at any time. Increasing it allows more concurrent sequences but increases KV cache memory usage and memory bandwidth pressure per decode step."
+    },
+    {
+      "id": 33,
+      "category": "Batching and Scheduling",
+      "difficulty": "medium",
+      "question": "What does max_num_batched_tokens control and how does it affect throughput?",
+      "reference_answer": "max_num_batched_tokens controls the maximum total number of tokens vLLM processes in a single forward pass across all batched requests (prefill + decode tokens combined). It sets a compute budget per scheduler step. Higher values allow more tokens per pass (better GPU utilization and higher throughput) but make each step longer, potentially increasing ITL."
+    },
+    {
+      "id": 34,
+      "category": "Batching and Scheduling",
+      "difficulty": "medium",
+      "question": "Why does vLLM prioritize decode over prefill in its scheduler?",
+      "reference_answer": "vLLM prioritizes decode to minimize ITL for already-started requests. If prefill were given equal priority, a large prefill batch could block decode steps, causing visible streaming pauses for users already receiving tokens. By prioritizing decode, vLLM ensures smooth token generation for active requests before starting new ones."
+    },
+    {
+      "id": 35,
+      "category": "Batching and Scheduling",
+      "difficulty": "medium",
+      "question": "What happens when max_num_seqs is set too high relative to available VRAM?",
+      "reference_answer": "If max_num_seqs is too high, vLLM accepts more concurrent sequences than the GPU can efficiently handle. KV cache memory fills up, causing evictions. Memory bandwidth per decode step increases beyond the GPU's HBM capacity, causing ITL spikes. In extreme cases, CUDA OOM errors occur. The optimal max_num_seqs is the highest value that keeps KV cache utilization below 80-85% and ITL within SLO."
+    },
+    {
+      "id": 36,
+      "category": "Batching and Scheduling",
+      "difficulty": "easy",
+      "question": "Explain the core tradeoff between batch size and latency in LLM serving.",
+      "reference_answer": "Larger batches improve GPU utilization and throughput (more tokens processed per second) because GPU tensor cores are better utilized with larger matrix operations. However, larger batches make each forward pass take longer, increasing ITL and potentially TTFT. The optimal batch size balances throughput against the latency SLO requirements."
+    },
+    {
+      "id": 37,
+      "category": "Batching and Scheduling",
+      "difficulty": "medium",
+      "question": "What is the difference between a prefill-heavy and a decode-heavy workload?",
+      "reference_answer": "Prefill-heavy workloads have long input prompts relative to output length (e.g., document summarization) — they are compute-bound and stress TTFT. Decode-heavy workloads have short inputs but long outputs (e.g., code generation) — they are memory-bandwidth bound and stress ITL. Serving configuration should be tuned for the dominant workload type in production."
+    },
+    {
+      "id": 38,
+      "category": "Batching and Scheduling",
+      "difficulty": "hard",
+      "question": "How does chunked prefill interact with the vLLM batch scheduler?",
+      "reference_answer": "With chunked prefill enabled, the scheduler can split a long prefill into multiple chunks and interleave each chunk with decode steps. Instead of one request monopolizing the GPU for a 2,000-token prefill, it processes 512 tokens of prefill, then a decode batch, then another 512 tokens of prefill, etc. This keeps decode latency smooth while still making forward progress on new request prefills."
+    },
+    {
+      "id": 39,
+      "category": "Batching and Scheduling",
+      "difficulty": "hard",
+      "question": "A team notices GPU utilization is only 40% despite many requests waiting in the queue. What are the likely bottlenecks?",
+      "reference_answer": "Low GPU utilization with many waiting requests indicates the scheduler is not feeding the GPU fast enough. Likely causes: (1) max_num_batched_tokens is too low — not enough tokens per forward pass to saturate GPU tensor cores, (2) requests are very short and overhead between batches is significant, (3) the concurrent_inputs limit is rejecting requests before they reach the scheduler, (4) KV cache is full, preventing admission of new sequences."
+    },
+    {
+      "id": 40,
+      "category": "Batching and Scheduling",
+      "difficulty": "hard",
+      "question": "What is the role of the KV cache manager in vLLM's scheduler admission control?",
+      "reference_answer": "The KV cache manager tracks which KV cache blocks are free, allocated, or shared via prefix caching. Before the scheduler admits a new request, the KV cache manager confirms there are enough free blocks to store the request's KV cache. If blocks are unavailable, the scheduler either waits or evicts lower-priority sequences. This prevents OOM by ensuring memory is available before a request enters the active pool."
+    },
+    {
+      "id": 41,
+      "category": "Batching and Scheduling",
+      "difficulty": "medium",
+      "question": "Why does increasing concurrent_inputs in Modal not always improve actual serving throughput?",
+      "reference_answer": "concurrent_inputs controls Modal's gateway queue depth, not vLLM's processing capacity. Increasing it allows more requests to queue at the gateway level, but if vLLM's max_num_seqs is unchanged, vLLM still processes the same number of sequences simultaneously. The extra queued requests just wait longer at the gateway. True throughput improvement requires increasing max_num_seqs (if VRAM allows) or adding replicas."
+    },
+    {
+      "id": 42,
+      "category": "Batching and Scheduling",
+      "difficulty": "medium",
+      "question": "How does a bursty request arrival pattern affect vLLM scheduler performance compared to steady arrival?",
+      "reference_answer": "Steady arrival: requests arrive at a constant rate, queue depth stays predictable, TTFT is stable and predictable. Bursty arrival: many requests arrive simultaneously, queue spikes temporarily, TTFT surges during the burst. For bursty workloads, maintaining warm GPU containers (higher min_containers) and higher concurrent_inputs provides a buffer to absorb bursts without dropping requests or extreme TTFT spikes."
+    },
+    {
+      "id": 43,
+      "category": "Batching and Scheduling",
+      "difficulty": "medium",
+      "question": "What is the purpose of the --max-model-len flag and how does it interact with batching efficiency?",
+      "reference_answer": "max_model_len sets the maximum number of tokens (input + output) a single request can have. Lower max_model_len means smaller KV cache per sequence, more sequences fit in VRAM, and higher max_num_seqs is feasible — improving batching efficiency. Setting max_model_len too high wastes VRAM on KV cache headroom that most short requests never use."
+    },
+    {
+      "id": 44,
+      "category": "Batching and Scheduling",
+      "difficulty": "medium",
+      "question": "Why does mixing short and long requests in the same continuous batching system achieve better GPU utilization than serving them separately?",
+      "reference_answer": "Short requests complete quickly, freeing decode slots for new requests — high requests/second throughput. Long requests occupy slots for extended periods but keep slots busy and generate many tokens — high token throughput per slot. Together, long requests maintain GPU decode utilization while short requests cycle through quickly, achieving high GPU utilization without either type alone being sufficient."
+    },
+    {
+      "id": 45,
+      "category": "Batching and Scheduling",
+      "difficulty": "hard",
+      "question": "How does tensor parallelism affect batch scheduling in vLLM?",
+      "reference_answer": "With tensor parallelism, all GPUs in the TP group process the same batch together — each forward pass requires all GPUs to compute their shard and synchronize via all-reduce. Scheduling still happens at the same level (one batch at a time), but each forward pass is slower due to communication overhead. The benefit is enabling larger models or faster per-request compute for large prompts, not higher batch concurrency."
+    },
+    {
+      "id": 46,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "easy",
+      "question": "What are the three main consumers of GPU VRAM in LLM serving?",
+      "reference_answer": "1. Model weights — fixed size, loaded once at startup. For a 7B model in BF16: approximately 14GB. 2. KV cache — dynamic, grows with concurrent sequences and context length, usually the largest consumer at high concurrency. 3. Activations — intermediate tensors during the forward pass, relatively small (1-2GB) and temporary."
+    },
+    {
+      "id": 47,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "medium",
+      "question": "What is the difference between BF16 and FP16 for LLM inference and which is preferred on H100?",
+      "reference_answer": "Both use 16 bits per value. FP16 has higher precision in its range but can overflow for large values common in LLM computations, causing NaN. BF16 has the same exponent range as FP32 (avoiding overflow) but lower mantissa precision. For LLM inference on H100 and A100, BF16 is preferred because it avoids overflow issues while having the same memory footprint as FP16."
+    },
+    {
+      "id": 48,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "medium",
+      "question": "What is INT8 quantization and what tradeoffs does it introduce for LLM serving?",
+      "reference_answer": "INT8 quantization stores model weights in 8-bit integers instead of 16-bit floats, halving model weight memory. At inference time, weights are used in integer or dequantized computation. Tradeoffs: (1) reduced precision can slightly degrade output quality (typically less than 1% on benchmarks), (2) some layers are more sensitive to quantization, (3) throughput may improve due to smaller weight loads from memory."
+    },
+    {
+      "id": 49,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "medium",
+      "question": "Why does gpu_memory_utilization default to 0.9 in vLLM rather than 1.0?",
+      "reference_answer": "vLLM sets gpu_memory_utilization to 0.9 to leave a 10% safety margin. The remaining 10% is reserved for CUDA runtime overhead, temporary activation buffers during forward passes, and safety headroom to prevent OOM errors under peak load. Using 100% would risk OOM during large batch forward passes where activation memory spikes temporarily above baseline."
+    },
+    {
+      "id": 50,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "hard",
+      "question": "A team wants to serve a 70B model on 2 H100s (80GB each). Is this feasible in BF16? What are the constraints?",
+      "reference_answer": "Yes, barely. A 70B model in BF16 requires approximately 140GB of VRAM for weights. Two H100s provide 160GB total. With tensor parallelism (--tensor-parallel-size 2), weights are split across both GPUs (~70GB each), leaving roughly 10GB per GPU for KV cache and activations — very tight. In practice, teams use INT8 or INT4 quantization to reduce weight memory and leave more room for KV cache."
+    },
+    {
+      "id": 51,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "hard",
+      "question": "What is GPTQ quantization and how does it achieve better quality than naive INT8 rounding?",
+      "reference_answer": "GPTQ is a post-training quantization method using second-order gradient information (Hessian) to optimally quantize each weight, minimizing the error introduced by quantization. Unlike simple INT8 which rounds each weight independently, GPTQ compensates for quantization error in each layer by adjusting remaining weights. This allows more aggressive quantization (INT4) with smaller quality degradation than naive rounding."
+    },
+    {
+      "id": 52,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "hard",
+      "question": "Does quantizing model weights also reduce KV cache memory? Explain.",
+      "reference_answer": "No. Model weight quantization (INT8, INT4) only reduces weight memory, not KV cache memory. KV cache is stored in the dtype specified by --kv-cache-dtype (default: same as model dtype, BF16). To reduce KV cache memory separately, teams must use KV cache quantization (--kv-cache-dtype fp8). A fully optimized setup quantizes both weights AND KV cache independently."
+    },
+    {
+      "id": 53,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "medium",
+      "question": "What risks arise from setting gpu_memory_utilization above 0.95?",
+      "reference_answer": "Very high gpu_memory_utilization leaves little headroom for activation spikes during large batch forward passes. This can cause intermittent CUDA OOM errors that crash the vLLM server, dropping all in-flight requests. Additionally, CUDA memory fragmentation at high utilization can cause allocation failures even when technically enough total memory exists but not as a contiguous block."
+    },
+    {
+      "id": 54,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "hard",
+      "question": "Why does serving a 4B model not always result in proportionally lower VRAM usage compared to a 16B model?",
+      "reference_answer": "Model weights scale linearly with parameter count, but KV cache does not. KV cache scales with sequence length, number of layers, and head dimensions. A 4B model with 32 layers and long sequences can have a similar KV cache footprint to a 16B model with fewer layers. Additionally, activation memory during forward passes scales with batch size and hidden dimension, not just parameter count."
+    },
+    {
+      "id": 55,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "hard",
+      "question": "What is AWQ (Activation-aware Weight Quantization) and how does it differ from GPTQ?",
+      "reference_answer": "AWQ identifies important weights by analyzing activation magnitudes — weights interacting with large activations are kept at higher precision while others are aggressively quantized. Unlike GPTQ which uses second-order gradients (Hessian computation), AWQ uses activation statistics and is faster to apply. AWQ typically achieves better quality than GPTQ at INT4 precision with lower calibration cost."
+    },
+    {
+      "id": 56,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "medium",
+      "question": "What performance changes should a team expect when switching from BF16 to INT4 quantization?",
+      "reference_answer": "Expected changes: (1) weight memory reduced approximately 4x (e.g., 14GB to 3.5GB for 7B), (2) more VRAM available for KV cache allowing more concurrent sequences, (3) throughput may increase due to smaller weight loads, (4) output quality degrades slightly — typically 1-3% on standard benchmarks but potentially more on specialized domains, (5) TTFT may improve due to faster weight loading during prefill."
+    },
+    {
+      "id": 57,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "hard",
+      "question": "What is the relationship between number of KV attention heads and KV cache size?",
+      "reference_answer": "KV cache size is proportional to the number of KV heads (not query heads in GQA/MQA models). Each KV head stores a key and value tensor per token per layer. More KV heads means larger KV cache per token. MQA models (1 KV head) have dramatically smaller KV caches than MHA models (one KV head per query head). This is a key architectural parameter determining serving memory efficiency."
+    },
+    {
+      "id": 58,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "medium",
+      "question": "Why can a smaller quantized model sometimes outperform a larger unquantized model in serving throughput?",
+      "reference_answer": "A smaller quantized model uses less VRAM for weights, leaving more VRAM for KV cache and concurrent sequences. At equal GPU memory, it can serve more concurrent users. The reduced weight size also means faster weight loading during prefill, reducing TTFT. If quality difference is acceptable, a quantized smaller model can achieve better throughput, lower latency, and lower cost per token."
+    },
+    {
+      "id": 59,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "easy",
+      "question": "What is the purpose of the --enforce-eager flag in vLLM and when should you use it?",
+      "reference_answer": "--enforce-eager disables torch.compile and uses PyTorch eager execution for every forward pass. This makes the server start faster (no compilation warmup) at the cost of lower peak throughput. Use it for development, debugging, quick experiments, or when fast startup is critical. For production workloads requiring maximum performance, use --no-enforce-eager (compiled mode)."
+    },
+    {
+      "id": 60,
+      "category": "GPU Memory and Quantization",
+      "difficulty": "hard",
+      "question": "How does tensor data type affect the speed of matrix multiplications on H100?",
+      "reference_answer": "H100 supports different Tensor Core modes: BF16/FP16 (standard), TF32, FP8, and INT8. FP8 and INT8 matrix multiplications are 2-4x faster than BF16 on H100 due to higher-throughput Tensor Core paths. This is why quantized models can achieve higher token generation throughput — not just because weights are smaller, but because the compute itself is fundamentally faster on the hardware."
+    },
+    {
+      "id": 61,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "easy",
+      "question": "What does --enable-prefix-caching do and when should it be enabled in production?",
+      "reference_answer": "--enable-prefix-caching enables vLLM to cache and reuse KV blocks for identical token prefixes across requests. Enable it when requests share common prefixes — system prompts, few-shot examples, or document context. For a tutor with a fixed system prompt, hit rates of 80-95% are typical, significantly reducing TTFT for all requests after the first."
+    },
+    {
+      "id": 62,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "hard",
+      "question": "What is the difference between --tensor-parallel-size and --pipeline-parallel-size in vLLM?",
+      "reference_answer": "--tensor-parallel-size splits each layer horizontally across GPUs (each GPU holds a fraction of every weight matrix, communicating via all-reduce per layer). --pipeline-parallel-size splits the model vertically (different layers on different GPUs, with activations passed between GPU groups between layer boundaries). Tensor parallelism has lower latency but higher per-step communication. Pipeline parallelism has lower communication but introduces pipeline bubbles."
+    },
+    {
+      "id": 63,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "easy",
+      "question": "What does --served-model-name do and why is it useful in production?",
+      "reference_answer": "--served-model-name sets the model name returned by the /v1/models API endpoint and required in client requests. It allows clients to refer to the model by a custom name instead of the full HuggingFace path. This enables model swaps without client code changes — clients continue sending requests to 'tutor-v1' while the underlying model is upgraded."
+    },
+    {
+      "id": 64,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "medium",
+      "question": "When should you use --no-enforce-eager (compiled mode) vs --enforce-eager (eager mode) in production?",
+      "reference_answer": "Use --no-enforce-eager (compiled mode / torch.compile) for production workloads where maximum throughput and minimum ITL are the goal — it optimizes GPU kernels after warmup, typically reducing ITL by 50-70%. Use --enforce-eager for development, debugging, or when startup time is critical. Compiled mode requires 5-15 minutes of warmup on first boot, cached for subsequent runs."
+    },
+    {
+      "id": 65,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "medium",
+      "question": "What does --limit-mm-per-prompt do in multimodal vLLM serving?",
+      "reference_answer": "--limit-mm-per-prompt controls the maximum number of multimodal items (images, videos) allowed per request. Setting {\"image\": 1, \"video\": 0} allows at most 1 image and no video per request. This prevents individual requests from consuming excessive VRAM for image feature extraction and limits the impact of image preprocessing on serving latency for other concurrent requests."
+    },
+    {
+      "id": 66,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "easy",
+      "question": "What does --gpu-memory-utilization control and what is the recommended production value?",
+      "reference_answer": "--gpu-memory-utilization sets the fraction of GPU VRAM vLLM allocates for its memory pool (model weights + KV cache). The recommended value is 0.90 (90%), leaving 10% for CUDA runtime, activation spikes, and safety margin. Increasing above 0.95 risks OOM errors. Decreasing below 0.85 wastes VRAM that could otherwise hold more KV cache."
+    },
+    {
+      "id": 67,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "easy",
+      "question": "What does --uvicorn-log-level warning do and why is this the production standard?",
+      "reference_answer": "Setting --uvicorn-log-level to warning suppresses info-level HTTP access logs from the Uvicorn ASGI web server, reducing log noise and storage costs. In production, every request generates an access log entry at info level — at thousands of requests per second this creates massive log volume. Warning level only logs actual problems, making errors easy to spot."
+    },
+    {
+      "id": 68,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "medium",
+      "question": "What does max_tokens in an API request control and how does it interact with max_model_len?",
+      "reference_answer": "max_tokens in the API request sets the maximum number of output tokens the model will generate for that specific request. max_model_len is the server-side cap on total tokens (input + output combined). If a request has 500 input tokens and max_tokens=200, the total is 700, which must be below max_model_len. If max_tokens would push the total past max_model_len, vLLM truncates the output at the limit."
+    },
+    {
+      "id": 69,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "easy",
+      "question": "What is the --dtype flag in vLLM and which value is recommended for H100?",
+      "reference_answer": "--dtype sets the data type for model weights and computations. Options include bfloat16, float16, float32, and auto. For production H100 serving, bfloat16 is the standard choice — it has the same exponent range as FP32 (avoiding overflow common in LLM computations), uses 16-bit memory, and is natively accelerated by H100 Tensor Cores."
+    },
+    {
+      "id": 70,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "hard",
+      "question": "What is the difference between concurrent_inputs (Modal) and max_num_seqs (vLLM) and how should they be sized relative to each other?",
+      "reference_answer": "concurrent_inputs is Modal's gateway-level queue limit — maximum requests Modal holds (queued plus processing) per container before rejecting new ones. max_num_seqs is vLLM's scheduler limit — how many sequences process simultaneously inside the GPU. Requests pass through Modal's gate first, then vLLM's queue. concurrent_inputs should be set to at least max_num_seqs plus a buffer (e.g., max_num_seqs * 2) to prevent Modal from rejecting requests that vLLM could process."
+    },
+    {
+      "id": 71,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "medium",
+      "question": "When would you set min_containers greater than 1 in Modal for an LLM serving app?",
+      "reference_answer": "Set min_containers greater than 1 to keep multiple warm GPU containers running at all times. This eliminates cold start latency (5-15 minutes for LLM containers) for requests arriving after a period of inactivity. For production services with latency SLOs, at least 1-2 warm containers must be maintained continuously. The cost is paying for idle GPU time during low-traffic periods."
+    },
+    {
+      "id": 72,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "medium",
+      "question": "What does --enable-chunked-prefill do to the vLLM scheduling behavior?",
+      "reference_answer": "--enable-chunked-prefill allows vLLM's scheduler to break large prefill operations into chunks and interleave them with decode steps. Without it, a request with a 4,000-token prompt would monopolize the GPU for its entire prefill before any decode steps run. With it, vLLM alternates between prefill chunks and decode batches, keeping ITL smooth at the cost of slightly longer total prefill time."
+    },
+    {
+      "id": 73,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "medium",
+      "question": "How does --mm-processor-kwargs affect image processing in multimodal vLLM serving?",
+      "reference_answer": "--mm-processor-kwargs passes configuration to the multimodal processor. The min_pixels and max_pixels parameters control image resolution limits — images are resized to fall within this range before tokenization. Lower max_pixels reduces VRAM usage for image features and speeds up preprocessing but reduces image detail. Higher max_pixels preserves detail at the cost of more tokens per image and more VRAM per multimodal request."
+    },
+    {
+      "id": 74,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "easy",
+      "question": "What error occurs if you try to serve a gated Hugging Face model without a valid token and how do you fix it?",
+      "reference_answer": "vLLM fails with a 403 Forbidden GatedRepoError from the Hugging Face Hub API during container startup. The container crashes and restarts repeatedly. Fix: (1) create a HF token with read access at huggingface.co/settings/tokens, (2) accept the model's license agreement on its HuggingFace model page while logged in, (3) pass the token as a secret to the serving environment."
+    },
+    {
+      "id": 75,
+      "category": "vLLM Flags and Configuration",
+      "difficulty": "medium",
+      "question": "What is the purpose of the scaledown_window parameter in Modal for LLM serving?",
+      "reference_answer": "scaledown_window sets how long (in seconds) a Modal GPU container stays alive after its last request before being shut down. A longer window keeps containers warm for subsequent requests, reducing cold starts but increasing idle GPU cost. For LLM serving, 5-10 minutes is typical — long enough to handle bursty traffic patterns without excessive idle cost during quiet periods."
+    },
+    {
+      "id": 76,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "easy",
+      "question": "What is the fundamental difference between using replicas and tensor parallelism to scale LLM serving?",
+      "reference_answer": "Replicas run N independent full copies of the model, each on its own GPU, with requests load-balanced across them — no inter-GPU communication. Tensor parallelism runs 1 model split across N GPUs, where all GPUs cooperate on every forward pass via all-reduce communication. Replicas improve throughput via parallel request handling. Tensor parallelism enables models too large to fit on a single GPU."
+    },
+    {
+      "id": 77,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "easy",
+      "question": "For a 4B parameter model on H100 GPUs, should you use replicas or tensor parallelism? Why?",
+      "reference_answer": "Replicas. A 4B model in BF16 uses approximately 8GB, fitting easily on a single 80GB H100. Tensor parallelism adds all-reduce communication overhead for every forward pass, which is unnecessary overhead when the model fits on one GPU and actively reduces efficiency. Replicas add zero inter-GPU communication and linearly scale throughput without any coordination cost."
+    },
+    {
+      "id": 78,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "medium",
+      "question": "What is all-reduce and why does it add latency in tensor parallelism?",
+      "reference_answer": "All-reduce is a collective communication operation where each GPU sends its partial result to all other GPUs and all receive the sum. In tensor parallelism, after each attention or MLP layer, partial activations on each GPU must be summed across all GPUs via all-reduce before the next layer can proceed. This inter-GPU communication (via NVLink or PCIe) adds fixed latency per layer to every forward pass."
+    },
+    {
+      "id": 79,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "hard",
+      "question": "When does tensor parallelism reduce TTFT compared to using a single GPU with the same model?",
+      "reference_answer": "Tensor parallelism reduces TTFT for individual requests when prefill computation is the bottleneck — by splitting compute across N GPUs, prefill completes faster. This benefit applies when serving large models with very long prompts where prefill time dominates. For small models or short prompts where prefill is already fast, tensor parallelism's communication overhead may negate or exceed the compute speedup."
+    },
+    {
+      "id": 80,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "hard",
+      "question": "A team has 4 H100s and a 70B model. What are their parallelism options and tradeoffs?",
+      "reference_answer": "Option 1: 1 replica with TP=4 (all 4 GPUs process 1 request at a time — faster per request but lower concurrency). Option 2: 2 replicas with TP=2 each (2 pairs of GPUs, each pair handles one request — doubles throughput vs option 1 with slightly slower per-request speed due to less TP parallelism). The 70B model in BF16 requires at least 2 H100s to fit, so single-GPU replicas are not possible."
+    },
+    {
+      "id": 81,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "hard",
+      "question": "How does NVLink affect the viability of tensor parallelism across multiple GPUs?",
+      "reference_answer": "Tensor parallelism's all-reduce operations are bounded by inter-GPU bandwidth. NVLink provides up to 900 GB/s on H100 SXM, approximately 10x more bandwidth than PCIe (64 GB/s). With NVLink, all-reduce overhead is small relative to compute time, making tensor parallelism efficient across 4-8 GPUs. Without NVLink (PCIe GPUs), all-reduce overhead can make tensor parallelism impractical beyond 2 GPUs."
+    },
+    {
+      "id": 82,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "hard",
+      "question": "The InferTutor scoring formula divides by total_gpus. How does this affect the decision to add replicas?",
+      "reference_answer": "Adding N replicas multiplies throughput and sustainable users by approximately N, but also multiplies total_gpus by N in the denominator. For replicas to improve score, they must deliver more than N-proportional gains in (goodput * users) or reduce TTFT/ITL enough to offset the GPU count penalty. In practice, replicas improve score when they allow significantly more users to be served without TTFT degradation."
+    },
+    {
+      "id": 83,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "medium",
+      "question": "Can tensor parallelism and replicas be combined? Give an example.",
+      "reference_answer": "Yes. You can have R replicas each using TP=N GPUs, using R*N total GPUs. For example, 2 replicas with TP=2 each uses 4 GPUs total. Each replica independently serves requests using 2-GPU tensor parallel inference. This is the standard approach for very large models — TP handles model fitting within each replica, replicas handle overall throughput scaling."
+    },
+    {
+      "id": 84,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "hard",
+      "question": "What is pipeline parallelism and when is it preferred over tensor parallelism?",
+      "reference_answer": "Pipeline parallelism splits the model's layers sequentially across GPUs — GPU 1 handles layers 1-16, GPU 2 handles layers 17-32, etc., with activations flowing between GPUs between layer groups. Unlike tensor parallelism which requires all GPUs to synchronize every layer, pipeline parallelism only communicates at layer group boundaries. It is preferred for very large models across many GPUs where tensor parallelism's per-layer all-reduce overhead becomes the dominant cost."
+    },
+    {
+      "id": 85,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "medium",
+      "question": "Why do replicas scale throughput linearly but not necessarily improve composite score linearly?",
+      "reference_answer": "Replicas scale throughput linearly (N replicas = N× throughput). However, the score formula divides by total_gpus (N), so the N× throughput gain is offset by the N× GPU penalty — approximately breaking even on score. Score only improves with replicas if: (1) more users can be sustained per GPU (lighter load per replica improves TTFT), or (2) TTFT or ITL improves significantly due to reduced per-replica pressure."
+    },
+    {
+      "id": 86,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "hard",
+      "question": "A team chooses between 1 replica of a 70B model and 8 replicas of an 8B model for the same task. What factors determine the better choice?",
+      "reference_answer": "Key factors: (1) quality — does 70B significantly outperform 8B on the target task? (2) cost — both use 8 H100s but with different utilization patterns, (3) latency — 8B per GPU has lower TTFT/ITL per request due to smaller model, (4) throughput — 8 replicas of 8B handle 8x more requests simultaneously, (5) operational complexity. If quality difference is small, 8B replicas almost always win on cost-efficiency and latency."
+    },
+    {
+      "id": 87,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "medium",
+      "question": "How does load balancing work across replicas in vLLM deployed on Modal?",
+      "reference_answer": "Modal uses its built-in load balancer to distribute incoming requests across available containers (replicas) using round-robin or least-connections routing. There is no request-level affinity — a user's second request may go to a different container than their first. This means prefix caching benefits are only realized within a single container, as each container maintains its own independent KV cache."
+    },
+    {
+      "id": 88,
+      "category": "Replicas vs Tensor Parallelism",
+      "difficulty": "medium",
+      "question": "What is the minimum number of H100s needed to serve Llama-3.1-70B in BF16 with vLLM?",
+      "reference_answer": "A minimum of 2 H100s. Llama-3.1-70B in BF16 requires approximately 140GB of VRAM for weights alone, exceeding a single H100's 80GB. Two H100s provide 160GB total. Using --tensor-parallel-size 2, weights are split across both GPUs. In practice, 4 H100s is recommended to leave adequate VRAM for KV cache and activations after loading the 140GB of weights."
+    },
+    {
+      "id": 89,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "easy",
+      "question": "What problem does chunked prefill solve in vLLM serving?",
+      "reference_answer": "Chunked prefill solves the problem of long prefill operations blocking decode steps. Without it, a request with thousands of input tokens monopolizes the GPU for its entire prefill phase, starving other requests' decode steps and causing ITL spikes. Chunked prefill breaks prefill into smaller pieces interleaved with decode steps, keeping decode latency smooth for active requests."
+    },
+    {
+      "id": 90,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "medium",
+      "question": "What determines the chunk size in chunked prefill and which vLLM flag controls it?",
+      "reference_answer": "The chunk size is determined by max_num_batched_tokens. In chunked prefill mode, vLLM will not process more than max_num_batched_tokens tokens of prefill in a single step, even if the prompt is longer. For a 10,000-token prompt with max_num_batched_tokens=4096, vLLM processes it in approximately 3 chunks across multiple scheduler steps."
+    },
+    {
+      "id": 91,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "medium",
+      "question": "Does chunked prefill increase or decrease TTFT for long-prompt requests? Explain the tradeoff.",
+      "reference_answer": "Chunked prefill slightly increases TTFT for requests with long prompts. Instead of processing the entire prefill in one pass (faster for that request but blocking others), chunked prefill interleaves prefill with decode steps, stretching total prefill time across multiple scheduler cycles. The tradeoff is slightly higher TTFT for new long-prompt requests in exchange for much lower ITL for already-active streaming requests."
+    },
+    {
+      "id": 92,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "easy",
+      "question": "What is the difference between KV cache (general) and prefix caching (specific)?",
+      "reference_answer": "KV cache is the general mechanism of storing attention key/value tensors to avoid recomputation during decode — it applies within a single currently-generating sequence. Prefix caching is a specific optimization that saves KV blocks for common token prefixes and reuses them across different requests. Prefix caching is optional; KV cache is fundamental to all autoregressive LLM inference."
+    },
+    {
+      "id": 93,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "medium",
+      "question": "How is prefix cache hit rate measured and what is considered a good hit rate?",
+      "reference_answer": "Prefix cache hit rate equals tokens served from cache divided by total input tokens, reported by vLLM as gpu_prefix_cache_hit_rate. A hit rate above 80% is excellent for workloads with shared system prompts. In the InferTutor capstone, Mistral achieved 95% hit rate because all requests share the same system prompt and first assistant turn. Below 50% suggests insufficient prefix repetition to benefit significantly."
+    },
+    {
+      "id": 94,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "easy",
+      "question": "Can prefix caching benefit requests from different users if they share the same system prompt?",
+      "reference_answer": "Yes. Prefix caching is based on token content, not user identity. If two different users' requests start with identical token sequences (e.g., the same system prompt), both requests benefit from the cached KV blocks regardless of which user sent them. This is the primary benefit for multi-user serving with shared system prompts — the prompt KV cache is computed once and reused across all users."
+    },
+    {
+      "id": 95,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "hard",
+      "question": "What happens to prefix cache entries when the KV cache memory fills up?",
+      "reference_answer": "When KV cache runs out of free blocks, vLLM may evict prefix cache entries to make room for active sequence KV blocks. Evicted prefix cache entries must be recomputed on the next request that needs them, temporarily reducing the hit rate and increasing TTFT for those requests. This is why high KV cache utilization (above 90%) can cause sudden drops in prefix cache hit rate."
+    },
+    {
+      "id": 96,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "medium",
+      "question": "Does chunked prefill help more for text-only workloads or image workloads? Why?",
+      "reference_answer": "Chunked prefill helps more for image and mixed workloads. Image inputs are tokenized into many tokens (potentially hundreds per image), creating very long effective prompt lengths. Without chunked prefill, a single image request can monopolize the GPU for a very long prefill. With chunked prefill, image prefills are distributed across multiple steps, significantly reducing their impact on decode latency for concurrent text requests."
+    },
+    {
+      "id": 97,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "hard",
+      "question": "What is the interaction between prefix caching and chunked prefill — are they complementary or conflicting?",
+      "reference_answer": "They are complementary. Prefix caching reduces the amount of prefill computation needed (cached tokens skip prefill entirely). Chunked prefill manages the remaining uncacheable prefill computation. Together, they minimize both total prefill work and its impact on decode latency. Enabling both is recommended for production multiturn conversational workloads — prefix caching reduces scope, chunked prefill manages what remains."
+    },
+    {
+      "id": 98,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "hard",
+      "question": "A team enables prefix caching but sees no improvement in TTFT after several days. What are the possible reasons?",
+      "reference_answer": "Possible reasons: (1) cache cold start — first request for each unique prefix always misses; benefit only appears on subsequent identical prefixes, (2) low prefix repetition — if every request has a unique prefix, nothing is cached, (3) KV cache too small — prefix entries are evicted before reuse, (4) max_model_len too small constraining block allocation, (5) requests being routed to different replicas, making each replica's cache independent."
+    },
+    {
+      "id": 99,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "hard",
+      "question": "How does prefix caching interact with request routing across multiple replicas?",
+      "reference_answer": "Prefix cache is local to each replica — each GPU container maintains its own independent KV cache and prefix cache. A request routed to Replica 1 cannot benefit from a prefix cached on Replica 2. Load balancing across replicas reduces effective prefix cache hit rate compared to a single-replica setup. For maximum prefix cache benefit, sticky routing (route requests with the same prefix to the same replica) is needed, though it conflicts with even load distribution."
+    },
+    {
+      "id": 100,
+      "category": "Chunked Prefill and Prefix Caching",
+      "difficulty": "easy",
+      "question": "What is the GPU memory overhead of enabling prefix caching in vLLM?",
+      "reference_answer": "Prefix caching itself has minimal GPU memory overhead. It reuses the existing KV cache block allocator with additional CPU-side bookkeeping (a hash map from prefix token hashes to block addresses). No extra GPU memory is allocated specifically for prefix caching. The KV cache pool size is unchanged — prefix caching only changes the eviction policy and block reuse logic within the existing allocation."
+    }
+  ]
+}

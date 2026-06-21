@@ -1,0 +1,63 @@
+{
+  "system_prompt": "You are InferTutor, a precise AI tutor for an inference engineering workshop. Answer with concrete systems reasoning. Keep answers compact, technical, and useful for a student optimizing vLLM serving.",
+  "text": [
+    "A student sees TTFT p95 jump from 700 ms to 4 s when traffic rises from 50 to 200 users. Diagnose likely causes and the first two experiments.",
+    "Explain why decode is often memory-bandwidth bound while prefill is more compute-bound. Mention KV cache behavior.",
+    "Given a 4 GPU budget for a 4B tutor model, when would replicas beat tensor parallelism?",
+    "What should a team tune first: max_num_seqs, max_num_batched_tokens, or max_model_len? Give a practical order.",
+    "Explain prefix caching using a course tutor with a long shared system prompt.",
+    "A team increases max_num_batched_tokens from 4096 to 16384. Throughput rises slightly but ITL p95 doubles. Explain the tradeoff.",
+    "Why can an 8 GPU run have more errors than a 4 GPU run even if aggregate GPU compute is higher?",
+    "Explain how chunked prefill protects decode latency in a mixed workload.",
+    "A vLLM server has low GPU utilization and low requests per second. What should the inference engineer inspect?",
+    "Compare tensor parallelism and replication for serving a Qwen 4B tutor model."
+  ],
+  "long": [
+    "Course context: KV cache, GQA, MQA, MLA, FlashAttention, PagedAttention, chunked prefill, continuous batching, quantization, speculative decoding, tensor parallelism, replicas, GPU memory bandwidth. Course context repeated for a long prompt. Course context: KV cache, GQA, MQA, MLA, FlashAttention, PagedAttention, chunked prefill, continuous batching, quantization, speculative decoding, tensor parallelism, replicas, GPU memory bandwidth. Now design a debugging playbook for a team whose p95 ITL degraded after they increased max_num_batched_tokens.",
+    "You are reviewing an inference launch plan. The team wants to serve a multimodal tutor with shared system prompts, short questions, occasional long debugging traces, and small uploaded diagrams. Explain how you would choose max_model_len, max_num_seqs, max_num_batched_tokens, prefix caching, chunked prefill, and replicas. Give the answer as a prioritized checklist."
+  ],
+  "image": [
+    "Look at this simplified serving diagram. What bottleneck would you investigate first for high TTFT?",
+    "This image is a toy workload diagram. Explain whether this looks prefill-heavy or decode-heavy and why.",
+    "A student uploaded this dashboard sketch during a load test. Suggest two vLLM knobs to try next.",
+    "Inspect this simple architecture sketch and explain whether replicas or tensor parallelism would be the first scaling move."
+  ],
+  "multiturn": [
+    {
+      "turns": [
+        {"role": "user", "content": "What is TTFT and why does it matter for a live tutor product?"},
+        {"role": "assistant", "content": "TTFT is time to first token — the delay between sending a request and receiving the first streamed token back. For a live tutor it matters because users perceive it as responsiveness. A 2s TTFT feels sluggish even if the rest of the response streams fast. Prefill queue depth and chunked prefill settings are the main levers."},
+        {"role": "user", "content": "What are the top two vLLM flags I should tune first to bring TTFT down?"}
+      ]
+    },
+    {
+      "turns": [
+        {"role": "user", "content": "Can you explain what KV cache is in simple terms?"},
+        {"role": "assistant", "content": "KV cache stores the key and value tensors computed during the attention operation for each token already processed. Instead of recomputing them on every new token, vLLM reads them from GPU memory. This makes decode fast but memory-intensive — the KV cache is usually the biggest consumer of GPU VRAM after model weights."},
+        {"role": "user", "content": "So if I increase max_model_len, does that mean the KV cache grows and I might run out of VRAM?"}
+      ]
+    },
+    {
+      "turns": [
+        {"role": "user", "content": "What is the difference between replicas and tensor parallelism?"},
+        {"role": "assistant", "content": "Replicas run independent full copies of the model, each on its own GPU. Requests are load-balanced across them. Tensor parallelism splits a single model across multiple GPUs so they cooperate on every forward pass via all-reduce communication. Replicas suit models that fit on one GPU and need more throughput. Tensor parallelism suits models too large to fit on one GPU."},
+        {"role": "user", "content": "For a 4B parameter model on H100s, which would you always choose and why?"}
+      ]
+    },
+    {
+      "turns": [
+        {"role": "user", "content": "I ran a load test and my ITL p95 jumped from 8ms to 45ms after I doubled max_num_seqs. Why?"},
+        {"role": "assistant", "content": "Doubling max_num_seqs means vLLM now decodes twice as many sequences simultaneously in each step. Each decode step must read the KV cache for all active sequences from GPU HBM. More sequences means more memory bandwidth consumed per step, and HBM bandwidth is finite. Once you saturate it, each step takes longer and ITL rises."},
+        {"role": "user", "content": "So there is a sweet spot for max_num_seqs beyond which ITL degrades faster than throughput improves?"}
+      ]
+    },
+    {
+      "turns": [
+        {"role": "user", "content": "What does chunked prefill do exactly?"},
+        {"role": "assistant", "content": "Chunked prefill breaks a long prefill operation into smaller chunks and interleaves them with decode steps. Without it, a long prompt monopolises the GPU during its entire prefill, blocking all decode steps and causing ITL spikes for other requests. With chunked prefill, prefill and decode share GPU time more fairly, smoothing out ITL at the cost of slightly longer total prefill time."},
+        {"role": "user", "content": "In a mixed workload with both short text and long image prompts, would you always enable chunked prefill?"}
+      ]
+    }
+  ]
+}
+

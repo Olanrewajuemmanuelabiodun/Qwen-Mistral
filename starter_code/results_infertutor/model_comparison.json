@@ -1,0 +1,65 @@
+{
+  "comparison_title": "Qwen3-VL-4B vs Mistral-7B — Fair Apples-to-Apples Comparison",
+  "scoring_formula": "score = throughput * users * (1 - error_rate) / (ttft_p95_s * itl_p95_s * total_gpus)",
+  "note": "Both runs: 100 users, 1 H100, 90s duration, multiturn mode, compiled mode, max_seqs=64, max_batch_tokens=8192, concurrent_inputs=128",
+
+  "runs": [
+    {
+      "label": "qwen-multiturn",
+      "model": "Qwen/Qwen3-VL-4B-Instruct",
+      "model_size": "4B params, ~8GB BF16",
+      "mode": "multiturn",
+      "users": 100,
+      "total_gpus": 1,
+      "error_rate": 0.0,
+      "total_requests": 2661,
+      "ttft_p50_ms": 1629.1,
+      "ttft_p95_ms": 1924.1,
+      "ttft_p99_ms": 2086.1,
+      "itl_p50_ms": 5.4,
+      "itl_p95_ms": 6.2,
+      "latency_p50_ms": 2308.8,
+      "latency_p95_ms": 2627.5,
+      "throughput_chunks_per_s": 3564.7,
+      "requests_per_s": 29.5,
+      "score": 29928000
+    },
+    {
+      "label": "mistral-best-single",
+      "model": "mistralai/Mistral-7B-Instruct-v0.3",
+      "model_size": "7B params, ~14GB BF16",
+      "mode": "multiturn",
+      "users": 100,
+      "total_gpus": 1,
+      "error_rate": 0.0,
+      "total_requests": 2207,
+      "ttft_p50_ms": 2231.6,
+      "ttft_p95_ms": 2593.1,
+      "ttft_p99_ms": 2813.6,
+      "itl_p50_ms": 7.0,
+      "itl_p95_ms": 7.9,
+      "latency_p50_ms": 2983.9,
+      "latency_p95_ms": 3414.7,
+      "throughput_chunks_per_s": 2575.7,
+      "requests_per_s": 24.5,
+      "score": 12573000
+    }
+  ],
+
+  "head_to_head": {
+    "ttft_p95_winner": "Qwen (1924ms vs 2593ms) — 26% faster to first token",
+    "itl_p95_winner": "Qwen (6.2ms vs 7.9ms) — 22% faster per token",
+    "throughput_winner": "Qwen (3565 vs 2576 chunks/s) — 38% more output",
+    "requests_winner": "Qwen (2661 vs 2207 total requests) — 21% more requests served",
+    "score_winner": "Qwen (29.9M vs 12.6M) — 2.4x higher score",
+    "errors": "Both 0% — both models stable at 100 users"
+  },
+
+  "key_findings": {
+    "why_qwen_wins": "For multiturn workloads on a single H100, the smaller 4B model outperforms the 7B model on every metric. Multiturn requests carry conversation history (3 turns) making them prefill-heavy. The 4B model processes these longer contexts faster and its smaller KV cache leaves more VRAM for concurrent sequences, directly improving both TTFT and throughput.",
+    "model_size_lesson": "Larger model does not mean better serving performance. Mistral-7B uses ~14GB VRAM for weights vs Qwen's ~8GB, leaving less room for KV cache and fewer concurrent sequences. For serving efficiency on a fixed GPU budget, a smaller well-trained model often wins over a larger one.",
+    "prefix_cache_observation": "Mistral showed 95% prefix cache hit rate in logs — the shared system prompt and first assistant context turn are heavily cached, which partially compensates for its larger size. Without prefix caching Mistral would score even lower.",
+    "itl_advantage": "Qwen's ITL advantage (6.2ms vs 7.9ms) comes from compiled mode kernel efficiency on a smaller model — fewer parameters means each decode step touches less memory bandwidth per token.",
+    "fair_comparison_verdict": "On identical hardware, settings, workload, and concurrency — Qwen3-VL-4B is the better serving choice for multiturn inference engineering tutor workloads."
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "config": {
+"model": "mistralai/Mistral-7B-Instruct-v0.3",
+    "mode": "multiturn",
+    "users": 100,
+    "duration": 90,
+    "ramp_up": 25,
+    "max_tokens": 128,
+    "request_timeout": 180,
+    "min_pause": 0.2,
+    "max_pause": 1.2,
+    "label": "mistral-mt-100",
+    "total_gpus": 1,
+    "results_dir": "results_infertutor/comparison"
+  },
+  "results": {
+    "total_requests": 3371,
+    "total_errors": 0,
+    "error_rate": 0.0,
+    "total_stream_chunks": 357344,
+    "ttft_p50_ms": 898.9269999947282,
+    "ttft_p95_ms": 1125.017292004486,
+    "ttft_p99_ms": 1331.1650000032387,
+    "itl_p50_ms": 6.418227685070469,
+    "itl_p95_ms": 7.187641369022285,
+    "latency_p50_ms": 1594.3451249986538,
+    "latency_p95_ms": 1901.9744170000195,
+    "per_request_tps_mean": 66.63099149663131,
+    "aggregate_stream_chunks_per_s": 3960.049837491673,
+    "requests_per_s": 37.357078899280324
+  }
+}

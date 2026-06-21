@@ -1,0 +1,32 @@
+{
+  "config": {
+"model": "Qwen/Qwen3-VL-4B-Instruct",
+    "mode": "multiturn",
+    "users": 50,
+    "duration": 90,
+    "ramp_up": 15,
+    "max_tokens": 128,
+    "request_timeout": 180,
+    "min_pause": 0.2,
+    "max_pause": 1.2,
+    "label": "qwen-mt-50",
+    "total_gpus": 1,
+    "results_dir": "results_infertutor/comparison"
+  },
+  "results": {
+    "total_requests": 1968,
+    "total_errors": 1,
+    "error_rate": 0.0005081300813008131,
+    "total_stream_chunks": 237565,
+    "ttft_p50_ms": 558.2718329969794,
+    "ttft_p95_ms": 798.4137079984066,
+    "ttft_p99_ms": 995.7547079975484,
+    "itl_p50_ms": 5.486186677186684,
+    "itl_p95_ms": 6.326428472475097,
+    "latency_p50_ms": 1234.7511669941014,
+    "latency_p95_ms": 1539.7804169988376,
+    "per_request_tps_mean": 97.7563012110541,
+    "aggregate_stream_chunks_per_s": 2632.2716040237765,
+    "requests_per_s": 21.805865833429976
+  }
+}
