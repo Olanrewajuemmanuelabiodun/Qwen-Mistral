@@ -39,8 +39,8 @@ A complete, self-contained package of all code, data, and results for the InferT
 Qwen_Mistral/
 │
 ├── README.md                                   ← this file
-├── Comparison_Report.pdf                       ← final report with quality eval (v2)
-├── generate_comparison_report.py               ← generates v1 PDF from experiment data
+├── Comparison_Report.pdf                       ← final report with quality eval
+├── generate_comparison_report.py               ← generates PDF from experiment data
 │
 └── starter_code/
     │
